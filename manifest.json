@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "NIE 预约助手 Pro v2.1",
+  "version": "2.1",
+  "description": "针对西班牙 Extranjería 系统优化的自动监控工具",
+  "permissions": [
+    "notifications",
+    "storage",
+    "alarms",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://icp.administracionelectronica.gob.es/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://icp.administracionelectronica.gob.es/icpplus/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
