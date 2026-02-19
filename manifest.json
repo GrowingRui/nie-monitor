@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "NIE 预约助手 Pro v2.1",
-  "version": "2.1",
-  "description": "针对西班牙 Extranjería 系统优化的自动监控工具",
+  "name": "NIE Cita Monitor Pro",
+  "version": "2.3",
+  "description": "Monitor NIE appointments and notify via Telegram",
   "permissions": [
     "notifications",
     "storage",
@@ -10,21 +10,23 @@
     "tabs"
   ],
   "host_permissions": [
-    "https://icp.administracionelectronica.gob.es/*"
+    "https://icp.administracionelectronica.gob.es/*",
+    "https://api.telegram.org/*"
   ],
-  "action": {
-    "default_popup": "popup.html"
-  },
   "background": {
     "service_worker": "background.js"
   },
+  "action": {
+    "default_popup": "popup.html"
+  },
   "content_scripts": [
     {
-      "matches": [
-        "https://icp.administracionelectronica.gob.es/icpplus/*"
-      ],
+      "matches": ["https://icp.administracionelectronica.gob.es/icpplus/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "icons": {
+    "48": "icon48.png"
+  }
 }
