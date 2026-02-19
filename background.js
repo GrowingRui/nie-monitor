@@ -1,85 +1,66 @@
-// 启动监控
-async function startMonitoring() {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tabs.length) return;
+const TELEGRAM_TOKEN = "你的BOT_TOKEN"; // 记得替换
+const TELEGRAM_CHAT_ID = "你的CHAT_ID"; // 记得替换
 
-    const tabId = tabs[0].id;
-    await chrome.storage.local.set({
-        isRunning: true,
-        monitoringTabId: tabId,
-        lastStatus: "unknown"
-    });
-
-    console.log("✅ 监控开始，目标标签页 ID:", tabId);
-    scheduleNextCheck();
+// 发送 Telegram 消息的函数
+async function sendTelegramMessage(text) {
+    const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
+    try {
+        await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                chat_id: TELEGRAM_CHAT_ID,
+                text: text,
+                parse_mode: "Markdown"
+            })
+        });
+        console.log("Telegram 消息已发出");
+    } catch (e) {
+        console.error("Telegram 发送失败:", e);
+    }
 }
 
-// 停止监控
-async function stopMonitoring() {
-    await chrome.storage.local.set({ isRunning: false, monitoringTabId: null });
-    chrome.alarms.clear("nieCheck");
-    console.log("🛑 监控已手动停止");
-}
+// 确保闹钟存在
+chrome.runtime.onInstalled.addListener(() => {
+    chrome.alarms.create("checkCita", { periodInMinutes: 1 });
+    console.log("闹钟已创建：每分钟检查一次");
+});
 
-// 设置下一次检查闹钟
-async function scheduleNextCheck() {
-    const { isRunning } = await chrome.storage.local.get("isRunning");
-    if (!isRunning) return;
-
-    // 正常的 1 到 1.5 分钟随机波动
-    const delay = 1.0 + Math.random() * 0.5;
-    chrome.alarms.create("nieCheck", { delayInMinutes: delay });
-    console.log(`⏰ 闹钟已设定：将在 ${Math.round(delay * 60)} 秒后刷新页面`);
-}
-
-// 闹钟触发监听
+// 监听闹钟：触发页面刷新
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-    if (alarm.name !== "nieCheck") return;
+    if (alarm.name === "checkCita") {
+        const tabs = await chrome.tabs.query({
+            url: "https://icp.administracionelectronica.gob.es/icpplus/*"
+        });
 
-    const { isRunning, monitoringTabId } = await chrome.storage.local.get(["isRunning", "monitoringTabId"]);
-
-    if (isRunning && monitoringTabId) {
-        try {
-            console.log("🔄 定时触发：通知页面进行无感刷新...");
-            // 不使用 reload()，改为向页面发送刷新指令
-            chrome.tabs.sendMessage(monitoringTabId, { action: "execute_refresh" });
-            scheduleNextCheck();
-        } catch (e) {
-            console.error("❌ 无法联系页面，可能已关闭:", e);
-            stopMonitoring();
+        if (tabs.length > 0) {
+            console.log("正在通知页面刷新并检查...");
+            // 发送指令让 Content.js 执行“无弹窗刷新”
+            chrome.tabs.sendMessage(tabs[0].id, { action: "refresh_and_check" });
         }
     }
 });
 
-// 消息中心
-chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.action === "start") startMonitoring();
-    else if (msg.action === "stop") stopMonitoring();
-    else if (msg.action === "status_update") handleStatusUpdate(msg.status);
-    else if (msg.action === "session_expired") handleSessionExpired();
-});
+// 接收来自 Content.js 的检测结果
+chrome.runtime.onMessage.addListener(async (msg) => {
+    if (msg.action === "status_report") {
+        const { lastStatus } = await chrome.storage.local.get("lastStatus");
 
-async function handleStatusUpdate(newStatus) {
-    const { lastStatus } = await chrome.storage.local.get("lastStatus");
+        if (msg.status === "available" && lastStatus !== "available") {
+            // 1. 发送系统通知
+            chrome.notifications.create({
+                type: "basic",
+                iconUrl: "icon48.png",
+                title: "🔥 发现预约空位！",
+                message: "西班牙预约系统有号了，请立即处理！",
+                priority: 2
+            });
 
-    if (newStatus === "available" && lastStatus !== "available") {
-        chrome.notifications.create({
-            type: "basic",
-            iconUrl: "icon48.png",
-            title: "🔥 发现预约空位！",
-            message: "系统状态已变化，快去查看！",
-            priority: 2
-        });
+            // 2. 发送 Telegram 通知
+            await sendTelegramMessage("🔔 *NIE 预约提醒*\n检测到有号！请立即查看浏览器页面！");
+        }
+
+        // 更新状态，防止重复报警
+        await chrome.storage.local.set({ lastStatus: msg.status });
     }
-    await chrome.storage.local.set({ lastStatus: newStatus });
-}
-
-async function handleSessionExpired() {
-    await stopMonitoring();
-    chrome.notifications.create({
-        type: "basic",
-        iconUrl: "icon48.png",
-        title: "⚠ 会话过期",
-        message: "监控已停止。请重新登录进入结果页后点开始。"
-    });
-}
+});
