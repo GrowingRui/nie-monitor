@@ -40,11 +40,12 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
     if (isRunning && monitoringTabId) {
         try {
-            console.log("🔄 正在刷新页面检测...");
-            await chrome.tabs.reload(monitoringTabId);
+            console.log("🔄 定时触发：通知页面进行无感刷新...");
+            // 不使用 reload()，改为向页面发送刷新指令
+            chrome.tabs.sendMessage(monitoringTabId, { action: "execute_refresh" });
             scheduleNextCheck();
         } catch (e) {
-            console.error("❌ 刷新失败，页面可能已被关闭:", e);
+            console.error("❌ 无法联系页面，可能已关闭:", e);
             stopMonitoring();
         }
     }
