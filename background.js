@@ -1,5 +1,5 @@
+// 启动监控
 async function startMonitoring() {
-    console.log("🚀 正在尝试启动监控...");
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tabs.length) return;
 
@@ -10,38 +10,48 @@ async function startMonitoring() {
         lastStatus: "unknown"
     });
 
-    console.log("✅ 监控已激活，Tab ID:", tabId);
+    console.log("✅ 监控开始，目标标签页 ID:", tabId);
     scheduleNextCheck();
 }
 
+// 停止监控
 async function stopMonitoring() {
-    console.log("🛑 停止监控");
     await chrome.storage.local.set({ isRunning: false, monitoringTabId: null });
     chrome.alarms.clear("nieCheck");
+    console.log("🛑 监控已手动停止");
 }
 
+// 设置下一次检查闹钟
 async function scheduleNextCheck() {
     const { isRunning } = await chrome.storage.local.get("isRunning");
     if (!isRunning) return;
 
-    const delay = 1.5 + Math.random() * 1.5;
+    // 正常的 1 到 1.5 分钟随机波动
+    const delay = 1.0 + Math.random() * 0.5;
     chrome.alarms.create("nieCheck", { delayInMinutes: delay });
-    console.log(`⏰ 已排期下一次刷新，将在 ${delay.toFixed(2)} 分钟后执行`);
+    console.log(`⏰ 闹钟已设定：将在 ${Math.round(delay * 60)} 秒后刷新页面`);
 }
 
+// 闹钟触发监听
 chrome.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name !== "nieCheck") return;
+
     const { isRunning, monitoringTabId } = await chrome.storage.local.get(["isRunning", "monitoringTabId"]);
 
     if (isRunning && monitoringTabId) {
-        console.log("🔄 定时器触发：正在刷新页面...");
-        chrome.tabs.reload(monitoringTabId);
-        scheduleNextCheck();
+        try {
+            console.log("🔄 正在刷新页面检测...");
+            await chrome.tabs.reload(monitoringTabId);
+            scheduleNextCheck();
+        } catch (e) {
+            console.error("❌ 刷新失败，页面可能已被关闭:", e);
+            stopMonitoring();
+        }
     }
 });
 
+// 消息中心
 chrome.runtime.onMessage.addListener((msg) => {
-    console.log("📩 收到消息:", msg.action, msg.status || "");
     if (msg.action === "start") startMonitoring();
     else if (msg.action === "stop") stopMonitoring();
     else if (msg.action === "status_update") handleStatusUpdate(msg.status);
@@ -49,18 +59,26 @@ chrome.runtime.onMessage.addListener((msg) => {
 });
 
 async function handleStatusUpdate(newStatus) {
-    if (newStatus === "available") {
-        console.log("🎉 【重要】检测到空位！正在发送通知...");
+    const { lastStatus } = await chrome.storage.local.get("lastStatus");
+
+    if (newStatus === "available" && lastStatus !== "available") {
         chrome.notifications.create({
             type: "basic",
             iconUrl: "icon48.png",
             title: "🔥 发现预约空位！",
-            message: "页面状态已变化，快去抢号！"
+            message: "系统状态已变化，快去查看！",
+            priority: 2
         });
     }
+    await chrome.storage.local.set({ lastStatus: newStatus });
 }
 
 async function handleSessionExpired() {
-    console.warn("⚠️ 会话已过期，监控停止");
     await stopMonitoring();
+    chrome.notifications.create({
+        type: "basic",
+        iconUrl: "icon48.png",
+        title: "⚠ 会话过期",
+        message: "监控已停止。请重新登录进入结果页后点开始。"
+    });
 }
