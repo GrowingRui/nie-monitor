@@ -4,72 +4,51 @@
  */
 
 (function () {
-    // 1. 监听来自 background.js 的刷新指令
-    // 使用这种方式可以绕过浏览器的 "Confirm Form Resubmission" 弹窗
-    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.action === "execute_refresh") {
-            console.log("🔄 接收到刷新指令，执行干净跳转以规避弹窗...");
-            // 使用 replace 或赋值 href 会发起 GET 请求，通常能规避 POST 提交警告
-            window.location.href = window.location.href;
+    console.log("LOG: [Content] 脚本已在页面注入");
+
+    chrome.runtime.onMessage.addListener((request) => {
+        if (request.action === "DO_REFRESH") {
+            console.log("LOG: [Content] 收到刷新指令，开始寻找交互按钮...");
+
+            const btnVolver = document.querySelector('input[value*="Volver"], input[value*="VOLVER"], #btnVolver');
+            const btnSiguiente = document.querySelector('input[value*="Siguiente"], input[value*="Aceptar"], #btnSiguiente');
+
+            if (btnVolver) {
+                console.log("LOG: [Action] 点击 Volver 避开表单重复提交弹窗");
+                btnVolver.click();
+            } else if (btnSiguiente) {
+                console.log("LOG: [Action] 点击 Siguiente 进行下一步检查");
+                btnSiguiente.click();
+            } else {
+                console.warn("LOG: [Action] 未找到按钮，执行强制刷新");
+                window.location.replace(window.location.href);
+            }
         }
     });
 
-    // 2. 执行页面内容扫描逻辑
-    chrome.storage.local.get(["isRunning"], function (result) {
-        // 如果监控未启动，则不执行任何逻辑
-        if (!result.isRunning) return;
+    function scanPage() {
+        chrome.storage.local.get(["isRunning"], function (res) {
+            if (!res.isRunning) return;
 
-        console.log("🔍 NIE Monitor: 正在扫描预约状态...");
+            const text = document.body.innerText.toLowerCase();
+            console.log("LOG: [Content] 正在分析页面文本...");
 
-        const bodyText = document.body.innerText;
-        const text = bodyText.toLowerCase();
+            if (text.includes("sesión ha caducado") || text.includes("sesion ha caducado")) {
+                chrome.runtime.sendMessage({ action: "REPORT_STATUS", status: "expired" });
+                return;
+            }
 
-        // --- A. 检查 Session 是否过期 ---
-        const sessionExpiredPatterns = [
-            "su sesión ha caducado",
-            "sesion ha caducado",
-            "volver a intentar",
-            "error de sesión"
-        ];
+            const noCitaPatterns = ["no hay citas disponibles", "no existen citas", "no hay disponibilidad"];
+            let isNoCita = noCitaPatterns.some(p => text.includes(p));
 
-        if (sessionExpiredPatterns.some(p => text.includes(p))) {
-            console.error("❌ Session 已失效");
-            chrome.runtime.sendMessage({ action: "session_expired" });
-            return;
-        }
+            if (isNoCita) {
+                chrome.runtime.sendMessage({ action: "REPORT_STATUS", status: "none" });
+            } else if (text.includes("seleccionar") || text.includes("oficina") || text.includes("pasaporte")) {
+                chrome.runtime.sendMessage({ action: "REPORT_STATUS", status: "available" });
+            }
+        });
+    }
 
-        // --- B. 检查是否有号 (无号特征) ---
-        const noCitaPatterns = [
-            "no hay citas disponibles",
-            "en este momento no hay citas",
-            "no existen citas",
-            "no hay disponibilidad"
-        ];
-
-        let noCitaFound = noCitaPatterns.some(p => text.includes(p));
-
-        // --- C. 结果判定与上报 ---
-        if (noCitaFound) {
-            console.log("😴 状态：当前依然没有空位。");
-            chrome.runtime.sendMessage({
-                action: "status_update",
-                status: "none"
-            });
-        } else if (
-            // 只要没发现“无号”关键词，且页面出现了核心交互词，就认为有号
-            text.includes("seleccionar") ||
-            text.includes("oficina") ||
-            text.includes("pasaporte") ||
-            text.includes("cita para")
-        ) {
-            console.log("🌟 状态：！！！发现空位！！！");
-            chrome.runtime.sendMessage({
-                action: "status_update",
-                status: "available"
-            });
-        } else {
-            // 如果既没有“无号”词，也没识别到“有号”特征，可能在初始页或加载中
-            console.log("⏳ 未能识别页面状态，等待下次刷新...");
-        }
-    });
+    // 延迟 2 秒扫描，等待页面渲染
+    setTimeout(scanPage, 2000);
 })();
