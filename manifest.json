@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "NIE Cita Monitor Pro",
-  "version": "2.3",
-  "description": "Monitor NIE appointments and notify via Telegram",
+  "name": "NIE Cita Monitor Pro v2.5",
+  "version": "2.5",
+  "description": "基于 Telegram 通知的西班牙预约自动化监控工具",
   "permissions": [
     "notifications",
     "storage",
